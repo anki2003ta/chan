@@ -25,7 +25,7 @@ import Goomgle from "@/assets/Goomgle.png";
 import { FiEyeOff } from "react-icons/fi";
 import { FiEye } from "react-icons/fi";
 import { signInWithPopup } from "firebase/auth";
-import { auth, provider } from "@/utils/firebase";
+import { auth, isGoogleAuthAvailable, provider } from "@/utils/firebase";
 import axios from "axios";
 import apiClient from "@/api/axios";
 
@@ -137,6 +137,10 @@ const Login = () => {
   } 
 
   const googleSignUp = async ()=>{
+    if (!isGoogleAuthAvailable) {
+      toast.error("Google sign up is not configured locally.");
+      return;
+    }
     try{
       const response = await signInWithPopup(auth,provider);
       let user = response.user
@@ -154,9 +158,14 @@ const Login = () => {
 
     }catch(error){
       console.error(error);
+      toast.error(error?.message || "Google sign up failed");
     }
   }
     const googleLogin = async ()=>{
+    if (!isGoogleAuthAvailable) {
+      toast.error("Google login is not configured locally.");
+      return;
+    }
     try{
       const response = await signInWithPopup(auth,provider);
       let user = response.user
@@ -173,6 +182,7 @@ const Login = () => {
       toast.success("Logged In successfully")
     }catch(error){
       console.error(error);
+      toast.error(error?.message || "Google login failed");
     }
   }
   
@@ -251,11 +261,16 @@ const Login = () => {
                 <div className="w-[30%] text-[15px] text-[#6f6f6f] flex items-center justify-center">Or continue</div>
                 <div className="w-[35%] h-[0.5px] bg-[#c4c4c4]"></div>
               </div>
-              <div className="h-[40px] border-[2px] border-black  rounded-[5px] flex justify-center items-center cursor-pointer dark:border-[#c4c4c4]" onClick={googleSignUp}>
+              <button
+                type="button"
+                disabled={!isGoogleAuthAvailable}
+                className="h-[40px] w-full border-[2px] border-black rounded-[5px] flex justify-center items-center cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#c4c4c4]"
+                onClick={googleSignUp}
+              >
                 <img src={Goomgle} className="w-[25px]"/>
                 <span className="text-[18px] text-gray-500 font-semibold">oogle</span>
 
-              </div>
+              </button>
 
             </CardContent>
             <CardFooter>
@@ -318,11 +333,16 @@ const Login = () => {
                 <div className="w-[30%] text-[15px] text-[#6f6f6f] flex items-center justify-center">Or continue</div>
                 <div className="w-[35%] h-[0.5px] bg-[#c4c4c4]"></div>
               </div>
-              <div className="h-[40px] border-[2px] border-black  rounded-[5px] flex justify-center items-center cursor-pointer dark:border-[#c4c4c4]" onClick={googleLogin}>
+              <button
+                type="button"
+                disabled={!isGoogleAuthAvailable}
+                className="h-[40px] w-full border-[2px] border-black rounded-[5px] flex justify-center items-center cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#c4c4c4]"
+                onClick={googleLogin}
+              >
                 <img src={Goomgle} className="w-[25px]"/>
                 <span className="text-[18px] text-gray-500 font-semibold">oogle</span>
 
-              </div>
+              </button>
 
             </CardContent>
             <CardFooter>

@@ -228,7 +228,7 @@ const VoiceNavigation = () => {
 
           
         // Advanced Search Commands
-        case 'voice_search':
+        case 'voice_search': {
           const searchQuery = match[2]?.trim();
           if (searchQuery && searchQuery.length > 1) {
             toast.success(`🔍 Searching for "${searchQuery}"`);
@@ -236,6 +236,7 @@ const VoiceNavigation = () => {
             return true;
           }
           break;
+        }
 
        
 
@@ -275,7 +276,7 @@ const VoiceNavigation = () => {
           toast.success("🔊 Audio enabled");
           return true;
 
-        case 'system_help':
+        case 'system_help': {
           const helpCommands = user?.role === 'instructor' 
             ? [
                 "🏠 Navigation: home, courses, my learning, profile, search",
@@ -293,8 +294,9 @@ const VoiceNavigation = () => {
           toast.info("🎤 Voice Commands Available", {
             description: helpCommands.join(" • "),
             duration: 10000,
-          });
+            });
           return true;
+        }
 
         case 'system_repeat':
           if (lastCommand) {

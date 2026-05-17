@@ -61,7 +61,7 @@ const handleDelete = async () => {
   }
 };
 
-    const [publishCourse, {}] = usePublishCourseMutation();
+    const [publishCourse] = usePublishCourseMutation();
  
   useEffect(() => {
     if (courseByIdData?.course) { 

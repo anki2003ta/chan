@@ -19,6 +19,7 @@ import examinerRoute from "./routes/examiner.route.js";
 import roadmapRoute from "./routes/roadmap.route.js";
 import searchRoute from "./routes/search.route.js";
 import predictorRoute from "./routes/predictor.route.js";
+import voiceAssistantRoute from "./routes/voiceAssistant.route.js";
 dotenv.config();
 
 // Database connection
@@ -160,6 +161,7 @@ app.use("/api/v1/examiner", examinerRoute);
 app.use("/api/v1/roadmap", roadmapRoute);
 app.use("/api/v1/search", searchRoute);
 app.use("/api/v1/predict", predictorRoute);
+app.use("/api/v1/voice-assistant", voiceAssistantRoute);
 
 // ✅ Error handling middleware
 app.use((err, req, res, next) => {

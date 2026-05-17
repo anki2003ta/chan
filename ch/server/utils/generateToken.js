@@ -1,7 +1,8 @@
 import jwt from "jsonwebtoken";
+import { getJwtSecret } from "./authConfig.js";
 
 export const generateToken = (res, user, message) => {
-  const token = jwt.sign({ userId: user._id, role: user.role }, process.env.SECRET_KEY, {
+  const token = jwt.sign({ userId: user._id, role: user.role }, getJwtSecret(), {
     expiresIn: "1d",
   });
 
