@@ -160,24 +160,6 @@ const appRouter = createBrowserRouter([
       // admin 
 
       {
-        path: "admin/manage-exam",
-        element: (
-          <AdminRoute>
-            <InstructorExamPage />
-          </AdminRoute>
-        ),
-      },
-
-      {
-        path: "admin-ai-examiner",
-        element: (
-          <AdminRoute>
-            <InstructorAIExaminer />
-          </AdminRoute>
-        ),
-      },
-
-      {
         path: "admin",
         element: (
           <AdminRoute>

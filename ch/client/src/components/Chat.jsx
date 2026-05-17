@@ -17,6 +17,7 @@ import {
   PhoneFilled,
   AudioMutedOutlined,
   VideoCameraOutlined,
+  SoundOutlined,
 } from "@ant-design/icons";
 
 import axios from "axios";
@@ -24,6 +25,8 @@ import moment from "moment";
 import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";
 import { useReactMediaRecorder } from "react-media-recorder";
+import { toast } from "sonner";
+import { useVoiceRecognition } from "./BrowserCompatibility";
 
 const Chat = ({
   courseId,
@@ -65,6 +68,10 @@ const Chat = ({
   const [selectedFile, setSelectedFile] = useState(null);
   const { status, startRecording, stopRecording, mediaBlobUrl, clearBlobUrl } =
     useReactMediaRecorder({ audio: true });
+  const { createRecognition, isSupported: isVoiceTypingSupported } =
+    useVoiceRecognition();
+  const [isVoiceTyping, setIsVoiceTyping] = useState(false);
+  const voiceRecognitionRef = useRef(null);
   const { user } = useSelector((state) => state.auth);
 
   const [isCalling, setIsCalling] = useState(false);
@@ -89,6 +96,70 @@ const Chat = ({
 
   const handleEmojiClick = (emoji) => {
     setInputMessage((prev) => prev + emoji.native);
+  };
+
+  const appendTranscriptToInput = (transcript) => {
+    const cleanTranscript = transcript.trim();
+    if (!cleanTranscript) return;
+
+    setInputMessage((prev) => {
+      const separator = prev.trim().length > 0 && !prev.endsWith(" ") ? " " : "";
+      return `${prev}${separator}${cleanTranscript}`;
+    });
+  };
+
+  const stopVoiceTyping = () => {
+    if (voiceRecognitionRef.current) {
+      voiceRecognitionRef.current.stop();
+      voiceRecognitionRef.current = null;
+    }
+    setIsVoiceTyping(false);
+  };
+
+  const handleVoiceTyping = () => {
+    if (isVoiceTyping) {
+      stopVoiceTyping();
+      return;
+    }
+
+    if (!isVoiceTypingSupported) {
+      toast.error("Voice typing is not supported in this browser.");
+      return;
+    }
+
+    const recognition = createRecognition();
+    if (!recognition) {
+      toast.error("Voice typing is not available.");
+      return;
+    }
+
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .slice(event.resultIndex)
+        .filter((result) => result.isFinal)
+        .map((result) => result[0]?.transcript || "")
+        .join(" ");
+
+      appendTranscriptToInput(transcript);
+    };
+    recognition.onerror = (event) => {
+      const message =
+        event.error === "not-allowed"
+          ? "Microphone permission was denied."
+          : "Voice typing failed. Please try again.";
+      toast.error(message);
+      setIsVoiceTyping(false);
+      voiceRecognitionRef.current = null;
+    };
+    recognition.onend = () => {
+      setIsVoiceTyping(false);
+      voiceRecognitionRef.current = null;
+    };
+
+    voiceRecognitionRef.current = recognition;
+    setIsVoiceTyping(true);
+    recognition.start();
   };
 
   const getCourseTitle = (course) => {
@@ -134,6 +205,14 @@ const Chat = ({
   useEffect(() => {
     activeChatRef.current = activeChat ? activeChat._id : null;
   }, [activeChat]);
+
+  useEffect(() => {
+    return () => {
+      if (voiceRecognitionRef.current) {
+        voiceRecognitionRef.current.stop();
+      }
+    };
+  }, []);
 
   const chatsRef = useRef([]);
   useEffect(() => {
@@ -1677,11 +1756,27 @@ const Chat = ({
                         )}
                       </div>
                       <Button
-                        icon={<AudioOutlined />}
+                        icon={<SoundOutlined />}
+                        title={
+                          status === "recording"
+                            ? "Stop audio recording"
+                            : "Record audio message"
+                        }
                         onClick={
                           status === "recording" ? stopRecording : startRecording
                         }
                         danger={status === "recording"}
+                      />
+                      <Button
+                        icon={isVoiceTyping ? <AudioMutedOutlined /> : <AudioOutlined />}
+                        title={
+                          isVoiceTyping
+                            ? "Stop voice typing"
+                            : "Voice type message"
+                        }
+                        onClick={handleVoiceTyping}
+                        type={isVoiceTyping ? "primary" : "default"}
+                        disabled={!isVoiceTypingSupported}
                       />
                       <Input.TextArea
                         value={inputMessage}

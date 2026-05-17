@@ -22,8 +22,8 @@ export const STUDENT_NAV_ITEMS = [
     { icon: Calendar, label: "College Predictor", path: "/college-predictor" },
     { icon: BarChart2, label: "Admin Dashboard", path: "/admin/dashboard", role: "instructor" },
     { icon: Library, label: "courses", path: "/admin/course", role: "instructor" },
-    { icon: HelpCircle, label: "Admin AI Examiner", path: "admin-ai-examiner", role: "instructor"  },
-    { icon: FileText, label: "Manage CBT", path: "admin/manage-exam", role: "instructor" },
+    { icon: HelpCircle, label: "Admin AI Examiner", path: "/admin/ai-examiner/instructor", role: "instructor"  },
+    { icon: FileText, label: "Manage CBT", path: "/admin/CBT/manage", role: "instructor" },
     { icon: Settings, label: "Edit Profile", path: "/profile", role: "instructor" }
 
     

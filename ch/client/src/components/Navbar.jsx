@@ -44,14 +44,14 @@ const Navbar = () => {
 
   const handleCbtClick = () => {
     if (user?.role == 'instructor') {
-      navigate('/admin/manage-exam');
+      navigate('/admin/CBT/manage');
     } else {
       navigate('/cbt')
     }
   };
   const handleAIEXaminerClick = () => {
     if (user?.role == 'instructor') {
-      navigate("admin-ai-examiner");
+      navigate("/admin/ai-examiner/instructor");
     } else {
       navigate('/ai-examiner')
     }
@@ -238,6 +238,9 @@ export default Navbar;
 
 const MobileNavbar = ({ user, logoutHandler }) => {
   const navigate = useNavigate();
+  const handleMobileAIExaminerClick = () => {
+    navigate(user?.role === "instructor" ? "/admin/ai-examiner/instructor" : "/ai-examiner");
+  };
 
   return (
     <Sheet>
@@ -275,7 +278,9 @@ const MobileNavbar = ({ user, logoutHandler }) => {
             <Link to="/my-learning">My Learning</Link>
           )}
           <Link to="/profile">Edit Profile</Link>
-          <Link to="ai-examiner">AI Examiner</Link>
+          <button type="button" onClick={handleMobileAIExaminerClick} className="text-left">
+            AI Examiner
+          </button>
           <Link to="/course/search">AI Search</Link>
           {/*<p>Log out</p>*/}
           <button
@@ -296,6 +301,5 @@ const MobileNavbar = ({ user, logoutHandler }) => {
     </Sheet>
   );
 };
-
 
 
