@@ -17,7 +17,6 @@ import {
   PhoneFilled,
   AudioMutedOutlined,
   VideoCameraOutlined,
-  SoundOutlined,
 } from "@ant-design/icons";
 
 import axios from "axios";
@@ -26,58 +25,42 @@ import data from "@emoji-mart/data";
 import Picker from "@emoji-mart/react";
 import { useReactMediaRecorder } from "react-media-recorder";
 import { toast } from "sonner";
-import { useVoiceRecognition } from "./BrowserCompatibility";
 
-const SPEECH_RECOGNITION_ERROR_MESSAGES = {
-  "not-allowed":
-    "Microphone permission was denied. Allow microphone access in your browser settings.",
-  "service-not-allowed":
-    "Voice typing is blocked by this browser or network. Check site permissions and try again.",
-  "audio-capture":
+const getAudioFileDetails = (mimeType = "") => {
+  const normalizedType = mimeType.split(";")[0] || "audio/webm";
+  const extensionByType = {
+    "audio/mp4": "m4a",
+    "audio/mpeg": "mp3",
+    "audio/ogg": "ogg",
+    "audio/wav": "wav",
+    "audio/webm": "webm",
+    "audio/x-m4a": "m4a",
+  };
+
+  return {
+    extension: extensionByType[normalizedType] || "webm",
+    type: normalizedType,
+  };
+};
+
+const formatRecordingDuration = (seconds) => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = String(seconds % 60).padStart(2, "0");
+  return `${minutes}:${remainingSeconds}`;
+};
+
+const RECORDING_ERROR_MESSAGES = {
+  permission_denied:
+    "Microphone permission was denied. Allow microphone access and try again.",
+  no_specified_media_found:
     "No microphone was found. Check your input device and try again.",
-  network:
-    "Speech recognition needs an internet connection. Check your network and try again.",
-  "no-speech":
-    "No speech was detected. Please speak clearly and try again.",
-  aborted:
-    "Voice typing was interrupted. Please try again.",
-  "bad-grammar": "Speech recognition grammar failed. Please try again.",
-  "language-not-supported":
-    "English voice typing is not supported by this browser.",
-};
-
-const getSpeechRecognitionErrorMessage = (error) =>
-  SPEECH_RECOGNITION_ERROR_MESSAGES[error] ||
-  "Voice typing could not understand the audio. Please try again.";
-
-const getVoiceStartErrorMessage = (error) => {
-  if (error?.name === "InvalidStateError") {
-    return "Voice typing is already listening.";
-  }
-
-  if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
-    return "Microphone permission was denied. Allow microphone access in your browser settings.";
-  }
-
-  return "Could not start voice typing. Check microphone access and try again.";
-};
-
-const isSecureVoiceTypingContext = () => {
-  if (typeof window === "undefined") return false;
-  if (window.isSecureContext) return true;
-
-  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-};
-
-const getMicrophonePermissionState = async () => {
-  if (!navigator.permissions?.query) return null;
-
-  try {
-    const permission = await navigator.permissions.query({ name: "microphone" });
-    return permission.state;
-  } catch (error) {
-    return null;
-  }
+  media_in_use:
+    "Your microphone is already being used by another app or call.",
+  media_aborted: "Audio recording was interrupted. Please try again.",
+  invalid_media_constraints:
+    "This microphone setup is not supported by the browser.",
+  no_constraints: "Audio recording is not available in this browser.",
+  recorder_error: "Audio recorder failed. Please try again.",
 };
 
 const Chat = ({
@@ -118,21 +101,28 @@ const Chat = ({
   const [isOnline, setIsOnline] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
-  const { status, startRecording, stopRecording, mediaBlobUrl, clearBlobUrl } =
-    useReactMediaRecorder({ audio: true });
-  const { createRecognition, isSupported: isVoiceTypingSupported } =
-    useVoiceRecognition();
-  const [isVoiceTyping, setIsVoiceTyping] = useState(false);
-  const isAudioRecorderBusy =
+  const {
+    status,
+    startRecording,
+    stopRecording,
+    mediaBlobUrl,
+    clearBlobUrl,
+    error: recordingError,
+  } = useReactMediaRecorder({ audio: true });
+  const [isSendingVoiceMessage, setIsSendingVoiceMessage] = useState(false);
+  const [voiceRecordingSeconds, setVoiceRecordingSeconds] = useState(0);
+  const isVoiceRecording = status === "recording";
+  const isVoiceRecorderBusy =
     status === "recording" ||
     status === "acquiring_media" ||
     status === "stopping";
-  const voiceRecognitionRef = useRef(null);
-  const voiceSessionIdRef = useRef(0);
-  const voiceTypingStartingRef = useRef(false);
-  const manuallyStoppingVoiceRef = useRef(false);
-  const lastProcessedSpeechResultRef = useRef(-1);
-  const hasVoiceTranscriptRef = useRef(false);
+  const shouldSendRecordedAudioRef = useRef(false);
+  const discardRecordedAudioRef = useRef(false);
+  const recordingChatIdRef = useRef(null);
+  const recorderStatusRef = useRef(status);
+  const stopRecordingRef = useRef(stopRecording);
+  const clearBlobUrlRef = useRef(clearBlobUrl);
+  const lastRecordingErrorRef = useRef(null);
   const { user } = useSelector((state) => state.auth);
 
   const [isCalling, setIsCalling] = useState(false);
@@ -159,205 +149,64 @@ const Chat = ({
     setInputMessage((prev) => prev + emoji.native);
   };
 
-  const appendTranscriptToInput = (transcript) => {
-    const cleanTranscript = transcript.trim();
-    if (!cleanTranscript) return;
+  const cancelVoiceRecording = useCallback(() => {
+    shouldSendRecordedAudioRef.current = false;
+    discardRecordedAudioRef.current = true;
+    recordingChatIdRef.current = null;
+    setIsSendingVoiceMessage(false);
+    setVoiceRecordingSeconds(0);
 
-    setInputMessage((prev) => {
-      const separator = prev.trim().length > 0 && !prev.endsWith(" ") ? " " : "";
-      return `${prev}${separator}${cleanTranscript}`;
-    });
-  };
-
-  const stopVoiceTyping = useCallback(() => {
-    voiceSessionIdRef.current += 1;
-    voiceTypingStartingRef.current = false;
-    manuallyStoppingVoiceRef.current = true;
-
-    const recognition = voiceRecognitionRef.current;
-    if (recognition) {
-      try {
-        recognition.stop();
-      } catch (error) {
-        try {
-          recognition.abort();
-        } catch (abortError) {
-          console.error("Failed to stop voice typing:", abortError);
-        }
-      }
-
-      voiceRecognitionRef.current = null;
+    if (recorderStatusRef.current === "recording") {
+      stopRecordingRef.current();
+      return;
     }
 
-    setIsVoiceTyping(false);
+    clearBlobUrlRef.current();
   }, []);
 
-  const handleVoiceTyping = async () => {
-    if (
-      isVoiceTyping ||
-      voiceTypingStartingRef.current ||
-      voiceRecognitionRef.current
-    ) {
-      stopVoiceTyping();
-      return;
-    }
+  const handleVoiceMessageToggle = () => {
+    if (!activeChat) return;
 
-    if (!isVoiceTypingSupported) {
-      toast.error("Voice typing is not supported in this browser.");
-      return;
-    }
-
-    if (!isSecureVoiceTypingContext()) {
-      toast.error("Voice typing requires HTTPS or localhost.");
-      return;
-    }
-
-    if (isAudioRecorderBusy) {
-      toast.info("Stop the audio recording before using voice typing.");
-      return;
-    }
-
-    if (isCalling || inCall) {
-      toast.info("End the call before using voice typing.");
-      return;
-    }
-
-    const sessionId = voiceSessionIdRef.current + 1;
-    voiceSessionIdRef.current = sessionId;
-    voiceTypingStartingRef.current = true;
-
-    const permissionState = await getMicrophonePermissionState();
-    if (voiceSessionIdRef.current !== sessionId) return;
-
-    if (permissionState === "denied") {
-      voiceTypingStartingRef.current = false;
-      toast.error(
-        "Microphone permission is blocked. Allow microphone access in your browser settings."
-      );
-      return;
-    }
-
-    const recognition = createRecognition();
-    if (!recognition) {
-      voiceTypingStartingRef.current = false;
-      toast.error("Voice typing is not available.");
-      return;
-    }
-
-    manuallyStoppingVoiceRef.current = false;
-    lastProcessedSpeechResultRef.current = -1;
-    hasVoiceTranscriptRef.current = false;
-    recognition.continuous = !/android|iphone|ipad|ipod/i.test(
-      navigator.userAgent
-    );
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      if (voiceSessionIdRef.current !== sessionId) return;
-
-      voiceTypingStartingRef.current = false;
-      setIsVoiceTyping(true);
-    };
-
-    recognition.onresult = (event) => {
-      if (voiceSessionIdRef.current !== sessionId) return;
-
-      const transcriptParts = [];
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (!result.isFinal || index <= lastProcessedSpeechResultRef.current) {
-          continue;
-        }
-
-        const transcript = result[0]?.transcript?.trim();
-        if (transcript) {
-          transcriptParts.push(transcript);
-          hasVoiceTranscriptRef.current = true;
-        }
-
-        lastProcessedSpeechResultRef.current = index;
-      }
-
-      appendTranscriptToInput(transcriptParts.join(" "));
-    };
-    recognition.onerror = (event) => {
-      if (voiceSessionIdRef.current !== sessionId) return;
-
-      voiceTypingStartingRef.current = false;
-      const wasUserStop = manuallyStoppingVoiceRef.current;
-      const hasTranscript = hasVoiceTranscriptRef.current;
-      manuallyStoppingVoiceRef.current = false;
-
-      if (wasUserStop || event.error === "aborted") {
-        if (voiceRecognitionRef.current === recognition) {
-          voiceRecognitionRef.current = null;
-        }
-        setIsVoiceTyping(false);
-        return;
-      }
-
-      if (!(event.error === "no-speech" && hasTranscript)) {
-        toast.error(getSpeechRecognitionErrorMessage(event.error));
-      }
-
-      if (voiceRecognitionRef.current === recognition) {
-        voiceRecognitionRef.current = null;
-      }
-      setIsVoiceTyping(false);
-    };
-    recognition.onend = () => {
-      if (voiceSessionIdRef.current !== sessionId) return;
-
-      voiceTypingStartingRef.current = false;
-      manuallyStoppingVoiceRef.current = false;
-      setIsVoiceTyping(false);
-      if (voiceRecognitionRef.current === recognition) {
-        voiceRecognitionRef.current = null;
-      }
-    };
-
-    voiceRecognitionRef.current = recognition;
-    setIsVoiceTyping(true);
-
-    try {
-      recognition.start();
-    } catch (error) {
-      if (voiceRecognitionRef.current === recognition) {
-        voiceRecognitionRef.current = null;
-      }
-
-      voiceTypingStartingRef.current = false;
-      manuallyStoppingVoiceRef.current = false;
-      setIsVoiceTyping(false);
-      toast.error(getVoiceStartErrorMessage(error));
-    }
-  };
-
-  const handleAudioRecordingToggle = () => {
     if (status === "recording") {
+      shouldSendRecordedAudioRef.current = true;
+      discardRecordedAudioRef.current = false;
+      setIsSendingVoiceMessage(true);
       stopRecording();
       return;
     }
 
-    stopVoiceTyping();
-    startRecording();
+    if (isCalling || inCall) {
+      toast.info("End the call before recording a voice message.");
+      return;
+    }
+
+    if (uploading || isSendingVoiceMessage) return;
+
+    if (isVoiceRecorderBusy) {
+      toast.info("Voice recorder is getting ready.");
+      return;
+    }
+
+    shouldSendRecordedAudioRef.current = false;
+    discardRecordedAudioRef.current = false;
+    recordingChatIdRef.current = activeChat._id;
+    lastRecordingErrorRef.current = null;
+    setVoiceRecordingSeconds(0);
+    clearBlobUrl();
+
+    try {
+      startRecording();
+    } catch (error) {
+      recordingChatIdRef.current = null;
+      toast.error("Could not start audio recording. Check microphone access.");
+    }
   };
 
-  const getVoiceTypingButtonTitle = () => {
-    if (!isVoiceTypingSupported) {
-      return "Voice typing is not supported in this browser";
-    }
-
-    if (isAudioRecorderBusy) {
-      return "Stop audio recording before voice typing";
-    }
-
-    if (isCalling || inCall) {
-      return "End the call before voice typing";
-    }
-
-    return isVoiceTyping ? "Stop voice typing" : "Voice type message";
+  const getVoiceMessageButtonTitle = () => {
+    if (status === "recording") return "Stop and send voice message";
+    if (isSendingVoiceMessage) return "Sending voice message";
+    if (isCalling || inCall) return "End the call before recording";
+    return "Record voice message";
   };
 
   const getCourseTitle = (course) => {
@@ -405,16 +254,71 @@ const Chat = ({
   }, [activeChat]);
 
   useEffect(() => {
-    return () => {
-      stopVoiceTyping();
-    };
-  }, [stopVoiceTyping]);
+    recorderStatusRef.current = status;
+    stopRecordingRef.current = stopRecording;
+    clearBlobUrlRef.current = clearBlobUrl;
+  }, [clearBlobUrl, status, stopRecording]);
 
   useEffect(() => {
-    if (!visible || !activeChat) {
-      stopVoiceTyping();
+    if (
+      !recordingError ||
+      recordingError === "NONE" ||
+      recordingError === lastRecordingErrorRef.current
+    ) {
+      return;
     }
-  }, [visible, activeChat?._id, stopVoiceTyping]);
+
+    lastRecordingErrorRef.current = recordingError;
+    recordingChatIdRef.current = null;
+    shouldSendRecordedAudioRef.current = false;
+    discardRecordedAudioRef.current = false;
+    setIsSendingVoiceMessage(false);
+    setVoiceRecordingSeconds(0);
+
+    toast.error(
+      RECORDING_ERROR_MESSAGES[recordingError] ||
+        "Could not record audio. Please try again."
+    );
+  }, [recordingError]);
+
+  useEffect(() => {
+    return () => {
+      cancelVoiceRecording();
+    };
+  }, [cancelVoiceRecording]);
+
+  useEffect(() => {
+    const recordingChatId = recordingChatIdRef.current;
+
+    if (!visible || !activeChat) {
+      cancelVoiceRecording();
+      return;
+    }
+
+    if (
+      recordingChatId &&
+      recordingChatId !== activeChat._id &&
+      (isVoiceRecording || isSendingVoiceMessage)
+    ) {
+      cancelVoiceRecording();
+    }
+  }, [
+    visible,
+    activeChat?._id,
+    isVoiceRecording,
+    isSendingVoiceMessage,
+    cancelVoiceRecording,
+  ]);
+
+  useEffect(() => {
+    if (!isVoiceRecording) return undefined;
+
+    const timer = setInterval(() => {
+      setVoiceRecordingSeconds((seconds) => seconds + 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isVoiceRecording]);
 
   const chatsRef = useRef([]);
   useEffect(() => {
@@ -732,7 +636,7 @@ const Chat = ({
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || !activeChat) return;
 
-    stopVoiceTyping();
+    cancelVoiceRecording();
 
     try {
       const { data } = await axios.post(
@@ -802,9 +706,6 @@ const Chat = ({
         formData,
         {
           withCredentials: true,
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
         }
       );
       console.log("File sent successfully:", data);
@@ -841,17 +742,63 @@ const Chat = ({
     }
   };
 
-  const handleSendAudio = async () => {
-    if (mediaBlobUrl) {
-      const blob = await fetch(mediaBlobUrl).then((r) => r.blob());
-      const file = new File([blob], "audio.wav", {
-        type: "audio/wav",
-        lastModified: Date.now(),
-      });
-      handleFileSend(file);
+  useEffect(() => {
+    if (!mediaBlobUrl) return;
+
+    if (discardRecordedAudioRef.current) {
+      discardRecordedAudioRef.current = false;
       clearBlobUrl();
+      return;
     }
-  };
+
+    if (!shouldSendRecordedAudioRef.current) {
+      clearBlobUrl();
+      return;
+    }
+
+    shouldSendRecordedAudioRef.current = false;
+
+    const sendRecordedAudio = async () => {
+      try {
+        const recordedChatId = recordingChatIdRef.current;
+
+        if (!activeChat || recordedChatId !== activeChat._id) {
+          return;
+        }
+
+        const blob = await fetch(mediaBlobUrl).then((response) =>
+          response.blob()
+        );
+
+        if (!blob.size) {
+          toast.error("Voice message was empty. Please record again.");
+          return;
+        }
+
+        const { extension, type } = getAudioFileDetails(blob.type);
+        const file = new File(
+          [blob],
+          `voice-message-${Date.now()}.${extension}`,
+          {
+            type,
+            lastModified: Date.now(),
+          }
+        );
+
+        await handleFileSend(file);
+      } catch (error) {
+        console.error("Failed to send voice message:", error);
+        toast.error("Failed to send voice message. Please try again.");
+      } finally {
+        recordingChatIdRef.current = null;
+        setIsSendingVoiceMessage(false);
+        setVoiceRecordingSeconds(0);
+        clearBlobUrl();
+      }
+    };
+
+    sendRecordedAudio();
+  }, [mediaBlobUrl]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1120,7 +1067,7 @@ const Chat = ({
     if (!socket || !activeChat) return;
 
     try {
-      stopVoiceTyping();
+      cancelVoiceRecording();
 
       const otherUser = getOtherParticipant(activeChat);
       if (!otherUser) return;
@@ -1162,7 +1109,7 @@ const Chat = ({
     if (!socket || !activeChat) return;
 
     try {
-      stopVoiceTyping();
+      cancelVoiceRecording();
 
       const otherUser = getOtherParticipant(activeChat);
       if (!otherUser) return;
@@ -1209,7 +1156,7 @@ const Chat = ({
     if (!socket || !incomingCall) return;
 
     try {
-      stopVoiceTyping();
+      cancelVoiceRecording();
 
       const { from, chatId, sdp, type } = incomingCall;
 
@@ -1918,11 +1865,50 @@ const Chat = ({
                         </Button>
                       </div>
                     )}
-                    {mediaBlobUrl && (
-                      <div>
-                        <audio src={mediaBlobUrl} controls />
-                        <Button onClick={handleSendAudio}>Send Audio</Button>
-                        <Button onClick={clearBlobUrl}>Cancel</Button>
+                    {(isVoiceRecording || isSendingVoiceMessage) && (
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          marginBottom: 10,
+                          padding: "8px 12px",
+                          borderRadius: 20,
+                          backgroundColor: "#fff1f0",
+                          color: "#cf1322",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            fontSize: 13,
+                            fontWeight: 500,
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              backgroundColor: "#cf1322",
+                            }}
+                          />
+                          <span>
+                            {isSendingVoiceMessage
+                              ? "Sending voice message..."
+                              : `Recording ${formatRecordingDuration(
+                                  voiceRecordingSeconds
+                                )}`}
+                          </span>
+                        </div>
+                        {isVoiceRecording && (
+                          <Button size="small" onClick={cancelVoiceRecording}>
+                            Cancel
+                          </Button>
+                        )}
                       </div>
                     )}
                     <div
@@ -1966,26 +1952,24 @@ const Chat = ({
                         )}
                       </div>
                       <Button
-                        icon={<SoundOutlined />}
-                        title={
-                          status === "recording"
-                            ? "Stop audio recording"
-                            : "Record audio message"
-                        }
-                        onClick={handleAudioRecordingToggle}
-                        danger={status === "recording"}
-                        disabled={
-                          status === "acquiring_media" || status === "stopping"
-                        }
-                      />
-                      <Button
                         icon={
-                          isVoiceTyping ? <AudioMutedOutlined /> : <AudioOutlined />
+                          isVoiceRecording ? (
+                            <AudioMutedOutlined />
+                          ) : (
+                            <AudioOutlined />
+                          )
                         }
-                        title={getVoiceTypingButtonTitle()}
-                        onClick={handleVoiceTyping}
-                        type={isVoiceTyping ? "primary" : "default"}
-                        disabled={!isVoiceTypingSupported}
+                        title={getVoiceMessageButtonTitle()}
+                        onClick={handleVoiceMessageToggle}
+                        type={isVoiceRecording ? "primary" : "default"}
+                        danger={isVoiceRecording}
+                        disabled={
+                          !isVoiceRecording &&
+                          (uploading ||
+                            isSendingVoiceMessage ||
+                            status === "acquiring_media" ||
+                            status === "stopping")
+                        }
                       />
                       <Input.TextArea
                         value={inputMessage}

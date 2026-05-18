@@ -1,4 +1,5 @@
 import express from "express";
+import multer from "multer";
 import  isAuthenticated  from "../middlewares/isAuthenticated.js";
 import {
   sendMessage,
@@ -11,12 +12,11 @@ import {
   deleteMessage,
 } from "../controllers/chat.controller.js";
 
-import singleUpload from "../middlewares/multer.middleware.js";
-
 const router = express.Router();
+const chatFileUpload = multer({ storage: multer.memoryStorage() }).single("file");
 
 router.post("/send", isAuthenticated, sendMessage);
-router.post("/send-file", isAuthenticated, singleUpload, sendFileMessage);
+router.post("/send-file", isAuthenticated, chatFileUpload, sendFileMessage);
 router.get("/chats", isAuthenticated, getChats);
 router.get("/messages/:chatId", isAuthenticated, getMessages);
 router.post("/mark-read", isAuthenticated, markAsRead);
