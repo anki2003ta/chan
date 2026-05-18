@@ -1,5 +1,5 @@
 import MessageContent from "./MessageContent";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 
 import { io } from "socket.io-client";
 import { useSelector } from "react-redux";
@@ -27,6 +27,58 @@ import Picker from "@emoji-mart/react";
 import { useReactMediaRecorder } from "react-media-recorder";
 import { toast } from "sonner";
 import { useVoiceRecognition } from "./BrowserCompatibility";
+
+const SPEECH_RECOGNITION_ERROR_MESSAGES = {
+  "not-allowed":
+    "Microphone permission was denied. Allow microphone access in your browser settings.",
+  "service-not-allowed":
+    "Voice typing is blocked by this browser or network. Check site permissions and try again.",
+  "audio-capture":
+    "No microphone was found. Check your input device and try again.",
+  network:
+    "Speech recognition needs an internet connection. Check your network and try again.",
+  "no-speech":
+    "No speech was detected. Please speak clearly and try again.",
+  aborted:
+    "Voice typing was interrupted. Please try again.",
+  "bad-grammar": "Speech recognition grammar failed. Please try again.",
+  "language-not-supported":
+    "English voice typing is not supported by this browser.",
+};
+
+const getSpeechRecognitionErrorMessage = (error) =>
+  SPEECH_RECOGNITION_ERROR_MESSAGES[error] ||
+  "Voice typing could not understand the audio. Please try again.";
+
+const getVoiceStartErrorMessage = (error) => {
+  if (error?.name === "InvalidStateError") {
+    return "Voice typing is already listening.";
+  }
+
+  if (error?.name === "NotAllowedError" || error?.name === "SecurityError") {
+    return "Microphone permission was denied. Allow microphone access in your browser settings.";
+  }
+
+  return "Could not start voice typing. Check microphone access and try again.";
+};
+
+const isSecureVoiceTypingContext = () => {
+  if (typeof window === "undefined") return false;
+  if (window.isSecureContext) return true;
+
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+};
+
+const getMicrophonePermissionState = async () => {
+  if (!navigator.permissions?.query) return null;
+
+  try {
+    const permission = await navigator.permissions.query({ name: "microphone" });
+    return permission.state;
+  } catch (error) {
+    return null;
+  }
+};
 
 const Chat = ({
   courseId,
@@ -71,7 +123,16 @@ const Chat = ({
   const { createRecognition, isSupported: isVoiceTypingSupported } =
     useVoiceRecognition();
   const [isVoiceTyping, setIsVoiceTyping] = useState(false);
+  const isAudioRecorderBusy =
+    status === "recording" ||
+    status === "acquiring_media" ||
+    status === "stopping";
   const voiceRecognitionRef = useRef(null);
+  const voiceSessionIdRef = useRef(0);
+  const voiceTypingStartingRef = useRef(false);
+  const manuallyStoppingVoiceRef = useRef(false);
+  const lastProcessedSpeechResultRef = useRef(-1);
+  const hasVoiceTranscriptRef = useRef(false);
   const { user } = useSelector((state) => state.auth);
 
   const [isCalling, setIsCalling] = useState(false);
@@ -108,16 +169,35 @@ const Chat = ({
     });
   };
 
-  const stopVoiceTyping = () => {
-    if (voiceRecognitionRef.current) {
-      voiceRecognitionRef.current.stop();
+  const stopVoiceTyping = useCallback(() => {
+    voiceSessionIdRef.current += 1;
+    voiceTypingStartingRef.current = false;
+    manuallyStoppingVoiceRef.current = true;
+
+    const recognition = voiceRecognitionRef.current;
+    if (recognition) {
+      try {
+        recognition.stop();
+      } catch (error) {
+        try {
+          recognition.abort();
+        } catch (abortError) {
+          console.error("Failed to stop voice typing:", abortError);
+        }
+      }
+
       voiceRecognitionRef.current = null;
     }
-    setIsVoiceTyping(false);
-  };
 
-  const handleVoiceTyping = () => {
-    if (isVoiceTyping) {
+    setIsVoiceTyping(false);
+  }, []);
+
+  const handleVoiceTyping = async () => {
+    if (
+      isVoiceTyping ||
+      voiceTypingStartingRef.current ||
+      voiceRecognitionRef.current
+    ) {
       stopVoiceTyping();
       return;
     }
@@ -127,39 +207,157 @@ const Chat = ({
       return;
     }
 
+    if (!isSecureVoiceTypingContext()) {
+      toast.error("Voice typing requires HTTPS or localhost.");
+      return;
+    }
+
+    if (isAudioRecorderBusy) {
+      toast.info("Stop the audio recording before using voice typing.");
+      return;
+    }
+
+    if (isCalling || inCall) {
+      toast.info("End the call before using voice typing.");
+      return;
+    }
+
+    const sessionId = voiceSessionIdRef.current + 1;
+    voiceSessionIdRef.current = sessionId;
+    voiceTypingStartingRef.current = true;
+
+    const permissionState = await getMicrophonePermissionState();
+    if (voiceSessionIdRef.current !== sessionId) return;
+
+    if (permissionState === "denied") {
+      voiceTypingStartingRef.current = false;
+      toast.error(
+        "Microphone permission is blocked. Allow microphone access in your browser settings."
+      );
+      return;
+    }
+
     const recognition = createRecognition();
     if (!recognition) {
+      voiceTypingStartingRef.current = false;
       toast.error("Voice typing is not available.");
       return;
     }
 
-    recognition.interimResults = true;
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .slice(event.resultIndex)
-        .filter((result) => result.isFinal)
-        .map((result) => result[0]?.transcript || "")
-        .join(" ");
+    manuallyStoppingVoiceRef.current = false;
+    lastProcessedSpeechResultRef.current = -1;
+    hasVoiceTranscriptRef.current = false;
+    recognition.continuous = !/android|iphone|ipad|ipod/i.test(
+      navigator.userAgent
+    );
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
 
-      appendTranscriptToInput(transcript);
+    recognition.onstart = () => {
+      if (voiceSessionIdRef.current !== sessionId) return;
+
+      voiceTypingStartingRef.current = false;
+      setIsVoiceTyping(true);
+    };
+
+    recognition.onresult = (event) => {
+      if (voiceSessionIdRef.current !== sessionId) return;
+
+      const transcriptParts = [];
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        if (!result.isFinal || index <= lastProcessedSpeechResultRef.current) {
+          continue;
+        }
+
+        const transcript = result[0]?.transcript?.trim();
+        if (transcript) {
+          transcriptParts.push(transcript);
+          hasVoiceTranscriptRef.current = true;
+        }
+
+        lastProcessedSpeechResultRef.current = index;
+      }
+
+      appendTranscriptToInput(transcriptParts.join(" "));
     };
     recognition.onerror = (event) => {
-      const message =
-        event.error === "not-allowed"
-          ? "Microphone permission was denied."
-          : "Voice typing failed. Please try again.";
-      toast.error(message);
+      if (voiceSessionIdRef.current !== sessionId) return;
+
+      voiceTypingStartingRef.current = false;
+      const wasUserStop = manuallyStoppingVoiceRef.current;
+      const hasTranscript = hasVoiceTranscriptRef.current;
+      manuallyStoppingVoiceRef.current = false;
+
+      if (wasUserStop || event.error === "aborted") {
+        if (voiceRecognitionRef.current === recognition) {
+          voiceRecognitionRef.current = null;
+        }
+        setIsVoiceTyping(false);
+        return;
+      }
+
+      if (!(event.error === "no-speech" && hasTranscript)) {
+        toast.error(getSpeechRecognitionErrorMessage(event.error));
+      }
+
+      if (voiceRecognitionRef.current === recognition) {
+        voiceRecognitionRef.current = null;
+      }
       setIsVoiceTyping(false);
-      voiceRecognitionRef.current = null;
     };
     recognition.onend = () => {
+      if (voiceSessionIdRef.current !== sessionId) return;
+
+      voiceTypingStartingRef.current = false;
+      manuallyStoppingVoiceRef.current = false;
       setIsVoiceTyping(false);
-      voiceRecognitionRef.current = null;
+      if (voiceRecognitionRef.current === recognition) {
+        voiceRecognitionRef.current = null;
+      }
     };
 
     voiceRecognitionRef.current = recognition;
     setIsVoiceTyping(true);
-    recognition.start();
+
+    try {
+      recognition.start();
+    } catch (error) {
+      if (voiceRecognitionRef.current === recognition) {
+        voiceRecognitionRef.current = null;
+      }
+
+      voiceTypingStartingRef.current = false;
+      manuallyStoppingVoiceRef.current = false;
+      setIsVoiceTyping(false);
+      toast.error(getVoiceStartErrorMessage(error));
+    }
+  };
+
+  const handleAudioRecordingToggle = () => {
+    if (status === "recording") {
+      stopRecording();
+      return;
+    }
+
+    stopVoiceTyping();
+    startRecording();
+  };
+
+  const getVoiceTypingButtonTitle = () => {
+    if (!isVoiceTypingSupported) {
+      return "Voice typing is not supported in this browser";
+    }
+
+    if (isAudioRecorderBusy) {
+      return "Stop audio recording before voice typing";
+    }
+
+    if (isCalling || inCall) {
+      return "End the call before voice typing";
+    }
+
+    return isVoiceTyping ? "Stop voice typing" : "Voice type message";
   };
 
   const getCourseTitle = (course) => {
@@ -208,11 +406,15 @@ const Chat = ({
 
   useEffect(() => {
     return () => {
-      if (voiceRecognitionRef.current) {
-        voiceRecognitionRef.current.stop();
-      }
+      stopVoiceTyping();
     };
-  }, []);
+  }, [stopVoiceTyping]);
+
+  useEffect(() => {
+    if (!visible || !activeChat) {
+      stopVoiceTyping();
+    }
+  }, [visible, activeChat?._id, stopVoiceTyping]);
 
   const chatsRef = useRef([]);
   useEffect(() => {
@@ -529,6 +731,8 @@ const Chat = ({
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim() || !activeChat) return;
+
+    stopVoiceTyping();
 
     try {
       const { data } = await axios.post(
@@ -916,6 +1120,8 @@ const Chat = ({
     if (!socket || !activeChat) return;
 
     try {
+      stopVoiceTyping();
+
       const otherUser = getOtherParticipant(activeChat);
       if (!otherUser) return;
 
@@ -956,6 +1162,8 @@ const Chat = ({
     if (!socket || !activeChat) return;
 
     try {
+      stopVoiceTyping();
+
       const otherUser = getOtherParticipant(activeChat);
       if (!otherUser) return;
 
@@ -1001,6 +1209,8 @@ const Chat = ({
     if (!socket || !incomingCall) return;
 
     try {
+      stopVoiceTyping();
+
       const { from, chatId, sdp, type } = incomingCall;
 
       const chat =
@@ -1762,18 +1972,17 @@ const Chat = ({
                             ? "Stop audio recording"
                             : "Record audio message"
                         }
-                        onClick={
-                          status === "recording" ? stopRecording : startRecording
-                        }
+                        onClick={handleAudioRecordingToggle}
                         danger={status === "recording"}
+                        disabled={
+                          status === "acquiring_media" || status === "stopping"
+                        }
                       />
                       <Button
-                        icon={isVoiceTyping ? <AudioMutedOutlined /> : <AudioOutlined />}
-                        title={
-                          isVoiceTyping
-                            ? "Stop voice typing"
-                            : "Voice type message"
+                        icon={
+                          isVoiceTyping ? <AudioMutedOutlined /> : <AudioOutlined />
                         }
+                        title={getVoiceTypingButtonTitle()}
                         onClick={handleVoiceTyping}
                         type={isVoiceTyping ? "primary" : "default"}
                         disabled={!isVoiceTypingSupported}

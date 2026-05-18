@@ -157,7 +157,7 @@ const appRouter = createBrowserRouter([
         ],
       },
 
-      // admin 
+      // admin
 
       {
         path: "admin",
@@ -173,8 +173,8 @@ const appRouter = createBrowserRouter([
           { path: "course/:courseId", element: <EditCourse /> },
           { path: "course/:courseId/lecture", element: <CreateLecture /> },
           { path: "ai-examiner/instructor", element: <InstructorAIExaminer /> },
-          { path: "CBT/manage", element: <InstructorExamPage />},
-          { path: "profile/edit", element: <Profile/>},
+          { path: "CBT/manage", element: <InstructorExamPage /> },
+          { path: "profile/edit", element: <Profile /> },
           {
             path: "course/:courseId/lecture/:lectureId",
             element: <EditLecture />,

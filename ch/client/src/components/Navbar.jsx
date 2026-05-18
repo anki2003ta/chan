@@ -27,10 +27,9 @@ import { useLogoutUserMutation } from "@/features/api/authApi";
 import { toast } from "sonner";
 import { useSelector } from "react-redux";
 import IconNavbar from "./IconNavbar";
-import Chat from "@/components/Chat"
+import Chat from "@/components/Chat";
 import { useState } from "react";
 import { STUDENT_NAV_ITEMS } from "@/constants/navigation";
-
 
 const Navbar = () => {
   const { user } = useSelector((store) => store.auth);
@@ -43,31 +42,31 @@ const Navbar = () => {
   };
 
   const handleCbtClick = () => {
-    if (user?.role == 'instructor') {
-      navigate('/admin/CBT/manage');
+    if (user?.role == "instructor") {
+      navigate("/admin/CBT/manage");
     } else {
-      navigate('/cbt')
+      navigate("/cbt");
     }
   };
   const handleAIEXaminerClick = () => {
-    if (user?.role == 'instructor') {
+    if (user?.role == "instructor") {
       navigate("/admin/ai-examiner/instructor");
     } else {
-      navigate('/ai-examiner')
+      navigate("/ai-examiner");
     }
-  }
+  };
 
   const handlePersonalizedRoadmapClick = () => {
-    if (user?.role == 'student') {
-      navigate('/ai-roadmap')
+    if (user?.role == "student") {
+      navigate("/ai-roadmap");
     }
-  }
+  };
 
   const handleCollegePredictorClick = () => {
-    if (user?.role == 'student') {
-      navigate('/college-predictor')
+    if (user?.role == "student") {
+      navigate("/college-predictor");
     }
-  }
+  };
 
   /*const logoutHandler = async () => {
     try {
@@ -95,7 +94,9 @@ const Navbar = () => {
           <div className="flex items-center gap-2">
             <School size={"30"} />
             <h1
-              onClick={() => navigate(user?.role === "instructor" ? "/admin/dashboard" : "/")}
+              onClick={() =>
+                navigate(user?.role === "instructor" ? "/admin/dashboard" : "/")
+              }
               className="hidden md:block font-extrabold text-2xl cursor-pointer"
             >
               SmartEdu
@@ -104,8 +105,12 @@ const Navbar = () => {
 
           {/* Centered Navigation for Students */}
           <div className="flex-1 flex justify-center">
-            <IconNavbar items = {STUDENT_NAV_ITEMS.filter((item)=> user?.role==="instructor"
-            ? item.role === "instructor": !item.role)}
+            <IconNavbar
+              items={STUDENT_NAV_ITEMS.filter((item) =>
+                user?.role === "instructor"
+                  ? item.role === "instructor"
+                  : !item.role,
+              )}
               canChat={enrolledCourses.length > 0}
               onOpenChat={() => setIsChatOpen(true)}
             />
@@ -118,8 +123,6 @@ const Navbar = () => {
                 }
               />
             )}
-            
-
           </div>
 
           {/* User icons and dark mode icon  */}
@@ -156,12 +159,12 @@ const Navbar = () => {
                       {" "}
                       <Link to="profile">Edit Profile</Link>{" "}
                     </DropdownMenuItem>
-                    {user?.role ==="instructor" ? (
-                    <DropdownMenuItem onClick={handleCbtClick}>
-                      {" "}
-                      CBT Manage
-                    </DropdownMenuItem>
-                    ):(
+                    {user?.role === "instructor" ? (
+                      <DropdownMenuItem onClick={handleCbtClick}>
+                        {" "}
+                        CBT Manage
+                      </DropdownMenuItem>
+                    ) : (
                       <DropdownMenuItem onClick={handleCbtClick}>
                         {" "}
                         CBT Practice
@@ -173,7 +176,9 @@ const Navbar = () => {
                     </DropdownMenuItem>
                     {user?.role === "student" && (
                       <>
-                        <DropdownMenuItem onClick={handlePersonalizedRoadmapClick}>
+                        <DropdownMenuItem
+                          onClick={handlePersonalizedRoadmapClick}
+                        >
                           {" "}
                           Personalized Roadmap
                         </DropdownMenuItem>
@@ -194,7 +199,9 @@ const Navbar = () => {
                   {user?.role === "instructor" && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem><Link to="/admin/dashboard">Dashboard</Link></DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Link to="/admin/dashboard">Dashboard</Link>
+                      </DropdownMenuItem>
                     </>
                   )}
                 </DropdownMenuContent>
@@ -239,7 +246,11 @@ export default Navbar;
 const MobileNavbar = ({ user, logoutHandler }) => {
   const navigate = useNavigate();
   const handleMobileAIExaminerClick = () => {
-    navigate(user?.role === "instructor" ? "/admin/ai-examiner/instructor" : "/ai-examiner");
+    navigate(
+      user?.role === "instructor"
+        ? "/admin/ai-examiner/instructor"
+        : "/ai-examiner",
+    );
   };
 
   return (
@@ -271,29 +282,33 @@ const MobileNavbar = ({ user, logoutHandler }) => {
         <Separator className="mr-2" />
         <nav className="flex flex-col space-y-4">
           <Link to="/">Home</Link>
-          {user?.role === "student" && (
-            <Link to="/dashboard">Dashboard</Link>
-          )}
+          {user?.role === "student" && <Link to="/dashboard">Dashboard</Link>}
           {user?.role !== "instructor" && (
             <Link to="/my-learning">My Learning</Link>
           )}
           <Link to="/profile">Edit Profile</Link>
-          <button type="button" onClick={handleMobileAIExaminerClick} className="text-left">
+          <button
+            type="button"
+            onClick={handleMobileAIExaminerClick}
+            className="text-left"
+          >
             AI Examiner
           </button>
           <Link to="/course/search">AI Search</Link>
           {/*<p>Log out</p>*/}
-          <button
-            onClick={logoutHandler}
-            className="text-left text-white-600 "
-          >
+          <button onClick={logoutHandler} className="text-left text-white-600 ">
             Log out
           </button>
         </nav>
         {user?.role === "instructor" && (
           <SheetFooter>
             <SheetClose asChild>
-              <Button type="submit" onClick={() => navigate("/admin/dashboard")}>Dashboard</Button>
+              <Button
+                type="submit"
+                onClick={() => navigate("/admin/dashboard")}
+              >
+                Dashboard
+              </Button>
             </SheetClose>
           </SheetFooter>
         )}
@@ -301,5 +316,3 @@ const MobileNavbar = ({ user, logoutHandler }) => {
     </Sheet>
   );
 };
-
-
