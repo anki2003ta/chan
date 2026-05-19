@@ -22,7 +22,7 @@ import {
   SheetTrigger,
 } from "./ui/sheet";
 import { Separator } from "@radix-ui/react-dropdown-menu";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useLogoutUserMutation } from "@/features/api/authApi";
 import { toast } from "sonner";
 import { useSelector } from "react-redux";
@@ -30,13 +30,12 @@ import IconNavbar from "./IconNavbar";
 import Chat from "@/components/Chat";
 import { useState } from "react";
 import { STUDENT_NAV_ITEMS } from "@/constants/navigation";
+import LanguageSwitcher, { LanguageTranslator } from "./LanguageSwitcher";
 
 const Navbar = () => {
   const { user } = useSelector((store) => store.auth);
   const [logoutUser, { data, isSuccess }] = useLogoutUserMutation();
   const navigate = useNavigate();
-  const location = useLocation();
-  const isDashboardRoute = location.pathname === "/dashboard";
   const logoutHandler = async () => {
     await logoutUser();
   };
@@ -88,6 +87,7 @@ const Navbar = () => {
 
   return (
     <>
+      <LanguageTranslator />
       <div className="h-16 dark:bg-[#020817] bg-white border-b dark:border-b-gray-800 border-b-gray-200 fixed top-0 left-0 right-0 duration-300 z-50">
         {/* Desktop */}
         <div className="max-w-7xl mx-auto hidden md:flex justify-between items-center gap-10 h-full">
@@ -126,7 +126,8 @@ const Navbar = () => {
           </div>
 
           {/* User icons and dark mode icon  */}
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-4">
+            <LanguageSwitcher />
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -232,7 +233,10 @@ const Navbar = () => {
           >
             SmartEdu
           </h1>
-          <MobileNavbar user={user} logoutHandler={logoutHandler} />
+          <div className="flex items-center gap-2">
+            <LanguageSwitcher compact />
+            <MobileNavbar user={user} logoutHandler={logoutHandler} />
+          </div>
         </div>
       </div>
 
