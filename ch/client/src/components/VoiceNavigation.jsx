@@ -105,7 +105,7 @@ const VoiceNavigation = () => {
         
         case 'navigate_profile':
           toast.success("👤 Opening profile");
-          navigate("/profile");
+          navigate(user?.role === "instructor" ? "/admin/profile/edit" : "/profile");
           return true;
 
         case 'navigate_courses':

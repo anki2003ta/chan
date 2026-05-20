@@ -84,6 +84,8 @@ const Navbar = () => {
 
   const [isChatOpen, setIsChatOpen] = useState(false);
   const enrolledCourses = user?.enrolledCourses || [];
+  const editProfilePath =
+    user?.role === "instructor" ? "/admin/profile/edit" : "/profile";
 
   return (
     <>
@@ -158,7 +160,7 @@ const Navbar = () => {
                     )}
                     <DropdownMenuItem>
                       {" "}
-                      <Link to="profile">Edit Profile</Link>{" "}
+                      <Link to={editProfilePath}>Edit Profile</Link>{" "}
                     </DropdownMenuItem>
                     {user?.role === "instructor" ? (
                       <DropdownMenuItem onClick={handleCbtClick}>
@@ -249,6 +251,8 @@ export default Navbar;
 
 const MobileNavbar = ({ user, logoutHandler }) => {
   const navigate = useNavigate();
+  const editProfilePath =
+    user?.role === "instructor" ? "/admin/profile/edit" : "/profile";
   const handleMobileAIExaminerClick = () => {
     navigate(
       user?.role === "instructor"
@@ -290,7 +294,7 @@ const MobileNavbar = ({ user, logoutHandler }) => {
           {user?.role !== "instructor" && (
             <Link to="/my-learning">My Learning</Link>
           )}
-          <Link to="/profile">Edit Profile</Link>
+          <Link to={editProfilePath}>Edit Profile</Link>
           <button
             type="button"
             onClick={handleMobileAIExaminerClick}

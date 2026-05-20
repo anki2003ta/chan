@@ -52,7 +52,7 @@ export const STUDENT_NAV_ITEMS = [
   {
     icon: Settings,
     label: "Edit Profile",
-    path: "/profile",
+    path: "/admin/profile/edit",
     role: "instructor",
   },
 ];
