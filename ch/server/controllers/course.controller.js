@@ -1,8 +1,11 @@
  
 import { Course } from "../models/course.model.js";
+import mongoose from "mongoose";
 import { Lecture } from "../models/lecture.model.js";
 import { CoursePurchase } from "../models/coursePurchase.model.js";
 import {deleteMediaFromCloudinary, deleteVideoFromCloudinary, uploadMedia} from "../utils/cloudinary.js";
+
+const isMongoConnected = () => mongoose.connection.readyState === 1;
 
 export const createCourse = async (req,res) => {
     try {
@@ -121,6 +124,13 @@ export const searchCourse = async (req, res) => {
 
 export const getPublishedCourse = async (_,res) => {
     try {
+        if (!isMongoConnected()) {
+            return res.status(200).json({
+                courses: [],
+                message: "MongoDB is not connected. Returning no courses for local development.",
+            });
+        }
+
         const courses = await Course.find({isPublished:true}).populate({path:"creator", select:"name photoUrl"});
         if(!courses){
             return res.status(404).json({

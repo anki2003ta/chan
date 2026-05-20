@@ -1,10 +1,18 @@
 import {User} from "../models/user.model.js";
+import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import { generateToken } from "../utils/generateToken.js";
 import { deleteMediaFromCloudinary, uploadMedia } from "../utils/cloudinary.js";
 import { CourseProgress } from "../models/courseProgress.js";
 import { Result } from "../models/result.model.js";
 import { Response } from "../models/response.model.js";
+import {
+    createLocalUser,
+    findLocalUserByEmail,
+    sanitizeLocalUser,
+} from "../utils/localAuthStore.js";
+
+const isMongoConnected = () => mongoose.connection.readyState === 1;
 
 export const register = async (req,res) => {
     try {
@@ -16,7 +24,9 @@ export const register = async (req,res) => {
                 message:"All fields are required."
             })
         }
-        const user = await User.findOne({email});
+        const user = isMongoConnected()
+            ? await User.findOne({email})
+            : await findLocalUserByEmail(email);
         if(user){
             return res.status(400).json({
                 success:false,
@@ -24,14 +34,21 @@ export const register = async (req,res) => {
             })
         }
         const hashedPassword = await bcrypt.hash(password, 10);
-        const savedUser =  await User.create({
-            name,
-            email,
-            password:hashedPassword,
-            role
-        });
+        const savedUser = isMongoConnected()
+            ? await User.create({
+                name,
+                email,
+                password:hashedPassword,
+                role
+            })
+            : await createLocalUser({
+                name,
+                email,
+                password:hashedPassword,
+                role
+            });
 
-        generateToken(res, savedUser, `Account created successfully`);
+        generateToken(res, sanitizeLocalUser(savedUser), `Account created successfully`);
         
     } catch (error) {
         console.log(error);
@@ -50,7 +67,9 @@ export const login = async (req,res) => {
                 message:"All fields are required."
             })
         }
-        const user = await User.findOne({email});
+        const user = isMongoConnected()
+            ? await User.findOne({email})
+            : await findLocalUserByEmail(email);
         if(!user){
             return res.status(400).json({
                 success:false,
@@ -64,7 +83,7 @@ export const login = async (req,res) => {
                 message:"Incorrect email or password"
             });
         }
-        generateToken(res, user, `Welcome back ${user.name}`);
+        generateToken(res, sanitizeLocalUser(user), `Welcome back ${user.name}`);
 
     } catch (error) {
         console.log(error);
@@ -100,6 +119,20 @@ export const logout = async (_,res) => {
 export const getUserProfile = async (req,res) => {
     try {
         const userId = req.id;
+        if (!isMongoConnected()) {
+            const user = sanitizeLocalUser(req.user);
+            if (!user) {
+                return res.status(404).json({
+                    message:"Profile not found",
+                    success:false
+                })
+            }
+            return res.status(200).json({
+                success:true,
+                user
+            })
+        }
+
         const user = await User.findById(userId).select("-password").populate("enrolledCourses");
         if(!user){
             return res.status(404).json({
@@ -109,7 +142,7 @@ export const getUserProfile = async (req,res) => {
         }
         return res.status(200).json({
             success:true,
-            user
+            user: sanitizeLocalUser(user)
         })
     } catch (error) {
         console.log(error);
@@ -359,18 +392,27 @@ export const getStudentDashboard = async (req, res) => {
 
 export const googleAuth = async (req, res)=>{
     try{
-        const {name, email, role}=req.body;
-        let user = await User.findOne({email})
+        const {name, email, role = "student"}=req.body;
+        let user = isMongoConnected()
+            ? await User.findOne({email})
+            : await findLocalUserByEmail(email);
         // console.log("name and email received");
         if(!user){
-            user = await User.create({
-                name,
-                email,
-                role
-            })
+            user = isMongoConnected()
+                ? await User.create({
+                    name,
+                    email,
+                    role
+                })
+                : await createLocalUser({
+                    name,
+                    email,
+                    password: "",
+                    role
+                })
         }
         console.log()
-        generateToken(res, user, `Account created successfully`);
+        generateToken(res, sanitizeLocalUser(user), `Account created successfully`);
     }catch(err){
         return res.status(500).json({message:"Google Auth error"});
     }

@@ -135,7 +135,7 @@ const Review = ()=>{
                 <CardTitle>Student Feedback</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-                {allReviews && allReviews.length>0?(allReviews.slice().reverse().slice(0,visibleCount).map(review=>(<div className="font-semibold flex flex-col justify-end space-y-2">
+                {allReviews && allReviews.length>0?(allReviews.slice().reverse().slice(0,visibleCount).map(review=>(<div key={review._id} className="font-semibold flex flex-col justify-end space-y-2">
                     <div className="font-bold flex flex-col justify-end">
                         <div className="flex justify-between">
                             <div>

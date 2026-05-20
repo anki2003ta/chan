@@ -6,6 +6,7 @@ import { purchaseApi } from "@/features/api/purchaseApi";
 import { courseProgressApi } from "@/features/api/courseProgressApi";
 import { roadmapApi } from "@/features/api/roadmapApi";
 import { searchApi } from "@/features/api/searchApi";
+import { voiceAssistantApi } from "@/features/api/voiceAssistantApi";
 
 export const appStore = configureStore({
     reducer: rootRedcuer,
@@ -15,7 +16,8 @@ export const appStore = configureStore({
         purchaseApi.middleware, 
         courseProgressApi.middleware,
         roadmapApi.middleware,
-        searchApi.middleware
+        searchApi.middleware,
+        voiceAssistantApi.middleware
     ),
 });
 

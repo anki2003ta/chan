@@ -77,7 +77,7 @@ class ErrorBoundary extends React.Component {
             </div>
 
             {/* Debug info for development */}
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {import.meta.env.DEV && this.state.error && (
               <details className="mt-6 text-left bg-gray-100 dark:bg-gray-700 rounded p-4">
                 <summary className="cursor-pointer font-medium text-sm mb-2">
                   Error Details (Development Only)
@@ -145,7 +145,7 @@ export const usePerformanceMonitoring = () => {
       };
 
       // Log memory usage every 30 seconds in development
-      if (process.env.NODE_ENV === 'development') {
+      if (import.meta.env.DEV) {
         const interval = setInterval(logMemoryUsage, 30000);
         return () => clearInterval(interval);
       }
